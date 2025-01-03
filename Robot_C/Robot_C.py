@@ -82,6 +82,7 @@ class RobotC:
         self.move_to(joint_pos=self.joint_pick_apprch_pos)
         self.move_to(task_pos=self.task_pick_target_pos)
         self.gripper(True)
+        time.sleep(1)
         self.move_to(task_pos=self.task_pick_apprch_pos)
 
     def place_lid(self):
@@ -89,6 +90,9 @@ class RobotC:
         self.move_to(joint_pos=self.joint_place_apprch_pos)
         self.move_to(task_pos=self.task_place_target_pos)
         self.gripper(False)
+        time.sleep(1)
+        self.move_to(joint_pos=self.joint_place_apprch_pos)
+        self.go_home()
 
     def go_home(self):
         """홈 위치로 이동."""
@@ -106,6 +110,9 @@ class RobotC:
 
 if __name__ == "__main__":
     try:
+        # Robot_A 추가해야함
+        # Robot_B 추가해야함
+        
         # Robot_C 객체 생성
         robot_c = RobotC(robot_c_ip, robot_c_name)
 
