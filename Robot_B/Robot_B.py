@@ -1,110 +1,117 @@
+import sys
 import time
 from indy_utils import indydcp_client as client  # Indy 로봇 제어 라이브러리
+import fixed_cordinates as pos
+import object_detection_rev as oj_detect
 
 # 각 로봇의 IP와 이름
 robot_b_ip = "192.168.3.6"
 robot_b_name = "NRMK-Indy7"
 
-
 class RobotB:
-    def __init__(self, robot_ip, robot_name):
-        """
-        Robot 클래스 초기화.
-
-        Args:
-            robot_ip (str): 로봇 IP 주소.
-            robot_name (str): 로봇 이름.
-        """
-        self.robot = client.IndyDCPClient(robot_ip, robot_name)  # Indy 로봇 객체
+    def __init__(self, ip, name):
+        self.ip = ip
+        self.name = name
+        self.robotB = client.IndyDCPClient(ip, name)
 
     def connect(self):
-        """로봇 연결."""
-        self.robot.connect()
-        print("로봇 연결 완료.")
+        """로봇 연결"""
+        self.robotB.connect()
+        if self.robotB.connect():
+            print(f"Robot B ({self.name}) 연결 완료")
 
     def disconnect(self):
-        """로봇 연결 해제."""
-        if self.robot.is_connected():
-            self.robot.disconnect()
-            print("로봇 연결 해제.")
-
-    def move_done_check(self, timeout=10):
-        """
-        로봇 움직임 완료 상태 확인.
-
-        Args:
-            timeout (int): 최대 대기 시간 (초).
-
-        Raises:
-            TimeoutError: 이동 완료 신호를 받지 못한 경우.
-        """
-        start_time = time.time()
-        while not self.robot.get_robot_status().get('movedone', False):
-            if time.time() - start_time > timeout:
-                raise TimeoutError("로봇 이동 완료 신호를 받지 못했습니다.")
-            time.sleep(0.5)
-
-    def move_to(self, joint_pos=None, task_pos=None):
-        """
-        지정된 위치로 이동.
-
-        Args:
-            joint_pos (list): 관절 위치.
-            task_pos (list): 작업 위치.
-        """
-        if joint_pos:
-            self.robot.joint_move_to(joint_pos)
-        elif task_pos:
-            self.robot.task_move_to(task_pos)
-        self.move_done_check()
+        """로봇 연결 해제"""
+        if self.robotB.connect():
+            self.robotB.disconnect()
+            print(f"Robot B ({self.name}) 연결 해제")
 
     def adsorber(self, hold):
         """
-        흡착툴
-        hold (bool): True - 흡착툴 on, False - 흡착툴 off.
+        흡착 툴 활성화/비활성화
+        hold (bool): True - 흡착 툴 ON, False - 흡착 툴 OFF
         """
-        self.robot.set_do(2, hold) # 흡착툴 번호 확인해서 바꿔야함함
+        self.robotB.set_do(2, hold)               # 흡착툴 세팅
+        status = "ON" if hold else "OFF"
+        print(f"Adsorber {status}")
+  
+    def move_done_check():
+        while True:
+            status = RobotB.get_robot_status()
+            time.sleep(0.1)
+            if status['movedone']:
+                break
 
-    def pick_lid(self):
-        """뚜껑을 집는 작업."""
-        self.move_to(joint_pos=self.joint_pick_apprch_pos)
-        self.move_to(task_pos=self.task_pick_target_pos)
-        self.adsorber(True)
-        self.move_to(task_pos=self.task_pick_apprch_pos)
+    def eliminate_obj(self, area):
+        """
+        불량품 수거 작업
+        area: 문제가 발생한 영역 번호
+        """
+        print(f"영역 {area}에서 불량품 수거 중...")
+        self.robotB.joint_move_to(pos.jig_positions[1][area])         # area번호의 joint_approach 좌표
+        RobotB.move_done_check()
+        self.robotB.task_move_to(pos.jig_positions[0][area])          # area번호의 task_target 좌표
+        RobotB.move_done_check()
+        self.adsorber(True)                                           # 흡착툴 ON
+        RobotB.move_done_check()
+        self.robotB.task_move_to(pos.jig_positions[2][area])          # area번호의 task_approach 좌표
+        RobotB.move_done_check()
+        self.robotB.joint_move_to(pos.elimination_position[0])        # 불량품 수거 위치로 이동
+        RobotB.move_done_check()
+        self.adsorber(False)                                          # 흡착툴 OFF
+        RobotB.move_done_check()
 
-    def place_lid(self):
-        """뚜껑을 놓는 작업."""
-        self.move_to(joint_pos=self.joint_place_apprch_pos)
-        self.move_to(task_pos=self.task_place_target_pos)
-        self.adsorber(False)
+        print(f"영역 {area}에서 불량품 수거 완료")
+
+    def replace_obj(self, area, expected_shape):
+        """
+        새로운 오브젝트 배치 작업
+        area: 문제가 발생한 영역 번호
+        expected_shape: 올바른 오브젝트
+        """
+        print(f"영역 {area}에 {expected_shape} 배치 중...")
+        self.robotB.joint_move_to(pos.supplier_positions[expected_shape][0][0]) # 공급대 ready 좌표 jointmove로 이동
+        RobotB.move_done_check()
+        self.robotB.task_move_to(pos.supplier_positions[expected_shape][1][1]) # 공급대 approach 좌표 taskmove
+        RobotB.move_done_check()
+        self.robotB.task_move_to(pos.supplier_positions[expected_shape][2][1]) # 공급대 target 좌표 taskmove
+        RobotB.move_done_check()
+        self.adsorber(True)                                                    # 흡착툴 ON
+        RobotB.move_done_check()
+        self.robotB.task_move_to(pos.supplier_positions[expected_shape][1][1]) # 공급대 approach 좌표 taskmove로 이동
+        RobotB.move_done_check()
+        self.robotB.joint_move_to(pos.jig_positions[1][area])                  # jig approach 좌표 jointmove
+        RobotB.move_done_check()
+        self.robotB.task_move_to(pos.jig_positions[0][area])                   # jig target 좌표 taskmove
+        RobotB.move_done_check()
+        self.adsorber(False)                                                   # 흡착툴 OFF
+        RobotB.move_done_check()
+        self.robotB.task_move_to(pos.jig_positions[2][area])                   # jig approach 좌표 taskmove
+        RobotB.move_done_check()
+        print(f"영역 {area}에 {expected_shape} 배치 완료")
 
     def go_home(self):
-        """홈 위치로 이동."""
-        self.robot.go_home()
-        self.move_done_check()
-
-    def set_task_velocity(self, level):
-        """Task move 속도 설정."""
-        self.robot.set_task_vel_level(level)
-
-    def set_joint_velocity(self, level):
-        """Joint move 속도 설정."""
-        self.robot.set_joint_vel_level(level)
+        """로봇을 홈 포지션으로 이동"""
+        self.go_home()
+        print("Robot B 홈 포지션으로 이동 완료")
 
 
 if __name__ == "__main__":
     try:
-        # Robot_B 객체 생성
+        # Robot B 객체 생성
         robot_b = RobotB(robot_b_ip, robot_b_name)
 
         # 로봇 연결
         robot_b.connect()
 
-        # 작업 실행
-        robot_b.pick_lid()
-        robot_b.place_lid()
+        # 문제 처리 작업 예제 (problem_objects는 외부에서 제공됨)
+        # problem_object = oj_detect.check_for_problem()
+        # # problem_objects = [(1, "Expected_Item_1"), (3, "Expected_Item_3")]  # 예제 리스트
+        # for area, expected_shape in problem_objects:
+        #     robot_b.eliminate_obj(area)  # 불량품 수거
+        #     robot_b.replace_obj(area, expected_shape)  # 올바른 오브젝트 배치
 
-        # 홈 포지션 이동
+        # 홈 포지션으로 이동
         robot_b.go_home()
 
     except Exception as e:
